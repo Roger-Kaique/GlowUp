@@ -247,6 +247,7 @@ const spaceImages = [
   "/images/space/6.jpeg",
 ];
 const repeatedSpaceImages = [...spaceImages, ...spaceImages, ...spaceImages];
+const SHOW_PROFESSIONALS_SECTION = false;
 
 function whatsappLink(message: string) {
   return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
@@ -254,6 +255,7 @@ function whatsappLink(message: string) {
 
 export default function Home() {
   const [scrolled, setScrolled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] =
     useState<ServiceCategory | null>(null);
   const [currentSpaceOffset, setCurrentSpaceOffset] =
@@ -261,6 +263,10 @@ export default function Home() {
   const [spaceStep, setSpaceStep] = useState(0);
   const [spaceTrackTransition, setSpaceTrackTransition] = useState(true);
   const spaceTrackRef = useRef<HTMLDivElement>(null);
+  const spacePointerStartX = useRef<number | null>(null);
+  const modalRef = useRef<HTMLElement>(null);
+  const modalCloseRef = useRef<HTMLButtonElement>(null);
+  const modalTriggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 30);
@@ -269,6 +275,36 @@ export default function Home() {
 
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    const closeWithEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    const closeAfterNavigation = (event: MouseEvent) => {
+      if ((event.target as HTMLElement).closest(".navbar nav a")) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("click", closeAfterNavigation);
+    document.addEventListener("keydown", closeWithEscape);
+    return () => {
+      document.removeEventListener("click", closeAfterNavigation);
+      document.removeEventListener("keydown", closeWithEscape);
+    };
+  }, [mobileMenuOpen]);
+
+  const handleSpacePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const startX = spacePointerStartX.current;
+    spacePointerStartX.current = null;
+    if (startX === null) return;
+
+    const distance = event.clientX - startX;
+    if (Math.abs(distance) < 40) return;
+    setCurrentSpaceOffset((current) => current + (distance < 0 ? 1 : -1));
+  };
 
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -319,21 +355,43 @@ export default function Home() {
     if (!selectedCategory) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedCategory(null);
+      if (event.key === "Escape") {
+        setSelectedCategory(null);
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+      const focusable = modalRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable?.length) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
+    const previousOverflow = document.body.style.overflow;
     document.addEventListener("keydown", handleKeyDown);
     document.body.style.overflow = "hidden";
+    modalCloseRef.current?.focus();
 
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = "";
+      document.body.style.overflow = previousOverflow;
+      modalTriggerRef.current?.focus();
     };
   }, [selectedCategory]);
 
   return (
     <main>
-      <header className={`navbar ${scrolled ? "navbar-active" : ""}`}>
+      <header className={`navbar ${scrolled ? "navbar-active" : ""}${mobileMenuOpen ? " mobile-menu-open" : ""}`}>
         <div className="navbar-inner">
           <a href="#inicio" className="logo" aria-label="Glow Up Concept">
             <img
@@ -345,12 +403,26 @@ export default function Home() {
             />
           </a>
 
-          <nav aria-label="Navegação principal">
+          <nav id="primary-navigation" aria-label="Navegação principal">
             <a href="#sobre">Sobre</a>
             <a href="#servicos">Serviços</a>
-            <a href="#profissionais">Profissionais</a>
+            {SHOW_PROFESSIONALS_SECTION && (
+              <a href="#profissionais">Profissionais</a>
+            )}
             <a href="#espaco">Nosso espaço</a>
           </nav>
+
+          <button
+            type="button"
+            className="mobile-menu-toggle"
+            aria-controls="primary-navigation"
+            aria-expanded={mobileMenuOpen}
+            aria-label={mobileMenuOpen ? "Fechar menu" : "Abrir menu"}
+            onClick={() => setMobileMenuOpen((open) => !open)}
+          >
+            <span />
+            <span />
+          </button>
 
           <a
             href={whatsappLink(
@@ -388,8 +460,8 @@ export default function Home() {
           <div className="image-shape">
             <img
               className="hero-photo"
-              src="/images/cabelo.jpeg"
-              alt="Cabelo finalizado no salão Glow Up Concept"
+              src="/images/glow-up-fachada.jpeg"
+              alt="Fachada da Glow Up Concept com o letreiro da marca"
               fetchPriority="high"
             />
           </div>
@@ -467,7 +539,10 @@ export default function Home() {
                 type="button"
                 className="service-card"
                 key={category.id}
-                onClick={() => setSelectedCategory(category)}
+                onClick={(event) => {
+                  modalTriggerRef.current = event.currentTarget;
+                  setSelectedCategory(category);
+                }}
                 aria-label={`Ver serviços e valores: ${category.name}`}
               >
                 <span
@@ -512,41 +587,43 @@ export default function Home() {
         </p>
       </section>
 
-      <section id="profissionais" className="professionals section">
-        <div className="professionals-title">
-          <span className="section-label">03 — NOSSA EQUIPE</span>
+      {SHOW_PROFESSIONALS_SECTION && (
+        <section id="profissionais" className="professionals section">
+          <div className="professionals-title">
+            <span className="section-label">03 — NOSSA EQUIPE</span>
 
-          <h2>
-            Pessoas que
-            <br />
-            <em>cuidam de você.</em>
-          </h2>
+            <h2>
+              Pessoas que
+              <br />
+              <em>cuidam de você.</em>
+            </h2>
 
-          <p className="professionals-intro">
-            Em breve, você poderá conhecer nossa equipe e a especialidade
-            de cada profissional.
-          </p>
-        </div>
-
-        <div className="professional-placeholder">
-          <div className="professional-photo">
-            <span>FOTOS EM BREVE</span>
-          </div>
-
-          <div className="professional-content">
-            <span>GLOW UP CONCEPT</span>
-            <h3>Nossa equipe</h3>
-            <p>
-              Os nomes, as fotos e as especialidades serão adicionados
-              quando tivermos as informações.
+            <p className="professionals-intro">
+              Em breve, você poderá conhecer nossa equipe e a especialidade
+              de cada profissional.
             </p>
           </div>
-        </div>
-      </section>
+
+          <div className="professional-placeholder">
+            <div className="professional-photo">
+              <span>FOTOS EM BREVE</span>
+            </div>
+
+            <div className="professional-content">
+              <span>GLOW UP CONCEPT</span>
+              <h3>Nossa equipe</h3>
+              <p>
+                Os nomes, as fotos e as especialidades serão adicionados
+                quando tivermos as informações.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section id="espaco" className="space section">
         <div className="space-heading">
-          <span className="section-label">04 — NOSSO ESPAÇO</span>
+          <span className="section-label">03 — NOSSO ESPAÇO</span>
 
           <h2>
             Feito para você
@@ -560,6 +637,15 @@ export default function Home() {
           role="region"
           aria-label="Fotos do espaço Glow Up Concept"
           aria-roledescription="carrossel"
+          onPointerDown={(event) => {
+            if ((event.target as HTMLElement).closest("button")) return;
+            if (event.pointerType === "mouse" && event.button !== 0) return;
+            spacePointerStartX.current = event.clientX;
+          }}
+          onPointerUp={handleSpacePointerUp}
+          onPointerCancel={() => {
+            spacePointerStartX.current = null;
+          }}
         >
           <div
             ref={spaceTrackRef}
@@ -588,6 +674,9 @@ export default function Home() {
                         ? ""
                         : `Espaço Glow Up Concept — foto ${photoNumber} de ${spaceImages.length}`
                     }
+                    loading="lazy"
+                    decoding="async"
+                    draggable={false}
                   />
                 </figure>
               );
@@ -664,10 +753,12 @@ export default function Home() {
           }}
         >
           <section
+            ref={modalRef}
             className="service-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="service-modal-title"
+            tabIndex={-1}
           >
             <div className="service-modal-header">
               <div>
@@ -679,6 +770,7 @@ export default function Home() {
               </div>
 
               <button
+                ref={modalCloseRef}
                 type="button"
                 className="modal-close"
                 onClick={() => setSelectedCategory(null)}
